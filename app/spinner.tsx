@@ -10,6 +10,12 @@ const spinEasing = (t: number) => {
   return 1 - Math.pow(1 - t, 4);
 };
 
+interface User {
+  username: string;
+  number: number | null;
+  joinTime: number;
+}
+
 interface SpinnerProps {
   username: string;
   roomId: string;
@@ -17,12 +23,11 @@ interface SpinnerProps {
 
 export default function Spinner({ username, roomId }: SpinnerProps) {
   const [socket, setSocket] = useState<Socket | null>(null);
-  const [users, setUsers] = useState<
-    { username: string; number: number | null }[]
-  >([]);
+  const [users, setUsers] = useState<User[]>([]);
   const [isSpinning, setIsSpinning] = useState(false);
   const [result, setResult] = useState<number | null>(null);
   const [selectedNumber, setSelectedNumber] = useState<number | null>(null);
+  const [timers, setTimers] = useState<{ [key: string]: number }>({});
   const controls = useAnimationControls();
 
   const segments = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
@@ -49,26 +54,77 @@ export default function Spinner({ username, roomId }: SpinnerProps) {
 
     newSocket.emit("joinRoom", roomId, username);
 
-    newSocket.on("userJoined", (updatedUsers) => {
+    newSocket.on("userJoined", (updatedUsers: User[]) => {
+      setUsers(updatedUsers);
+      initializeTimers(updatedUsers);
+    });
+
+    newSocket.on("userLeft", (updatedUsers: User[]) => {
+      setUsers(updatedUsers);
+      initializeTimers(updatedUsers);
+    });
+
+    newSocket.on("userChoseNumber", (updatedUsers: User[]) => {
       setUsers(updatedUsers);
     });
 
-    newSocket.on("userLeft", (updatedUsers) => {
-      setUsers(updatedUsers);
-    });
-
-    newSocket.on("userChoseNumber", (updatedUsers) => {
-      setUsers(updatedUsers);
-    });
-
-    newSocket.on("allUsersChosen", (spinResult) => {
+    newSocket.on("allUsersChosen", (spinResult: number) => {
       handleSpin(spinResult);
+    });
+
+    newSocket.on("startNewRound", (updatedUsers: User[]) => {
+      setUsers(updatedUsers);
+      setSelectedNumber(null);
+      setResult(null);
+      initializeTimers(updatedUsers);
+    });
+
+    newSocket.on("autoSelectedNumber", (number: number) => {
+      setSelectedNumber(number);
     });
 
     return () => {
       newSocket.disconnect();
     };
   }, [roomId, username]);
+
+  const initializeTimers = (updatedUsers: User[]) => {
+    const newTimers: { [key: string]: number } = {};
+    updatedUsers.forEach((user) => {
+      newTimers[user.username] = 10;
+    });
+    setTimers(newTimers);
+  };
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setTimers((prevTimers) => {
+        const newTimers: { [key: string]: number } = {};
+        let allTimersExpired = true;
+
+        users.forEach((user) => {
+          if (user.number === null) {
+            const timeLeft = Math.max(
+              0,
+              10 - Math.floor((Date.now() - user.joinTime) / 1000)
+            );
+            newTimers[user.username] = timeLeft;
+            if (timeLeft > 0) allTimersExpired = false;
+          } else {
+            newTimers[user.username] = 0;
+          }
+        });
+
+        if (allTimersExpired) {
+          clearInterval(interval);
+        }
+
+        return newTimers;
+      });
+    }, 1000);
+
+    return () => clearInterval(interval);
+  }, [users]);
 
   const handleNumberSelection = (number: number) => {
     if (isSpinning || selectedNumber !== null) return;
@@ -97,18 +153,21 @@ export default function Spinner({ username, roomId }: SpinnerProps) {
           setIsSpinning(false);
           setResult(spinResult);
           setSelectedNumber(null);
+          socket?.emit("roundComplete", roomId);
         });
     },
-    [controls]
+    [controls, socket, roomId]
   );
 
   return (
     <div className="flex flex-col items-center min-h-screen bg-teal-500 py-8 gap-4">
-      <div className="w-full px-8">
-        <div className="text-white text-2xl font-bold">
-          Welcome, {username}!
+      <div className="w-full px-8 flex justify-between items-center">
+        <div>
+          <div className="text-white text-2xl font-bold">
+            Welcome, {username}!
+          </div>
+          <div className="text-white text-xl">Room: {roomId}</div>
         </div>
-        <div className="text-white text-xl">Room: {roomId}</div>
       </div>
       <div className="text-white text-xl">Spinner Game</div>
 
@@ -191,13 +250,15 @@ export default function Spinner({ username, roomId }: SpinnerProps) {
             <button
               key={number}
               onClick={() => handleNumberSelection(number)}
-              disabled={isSpinning || selectedNumber !== null}
+              disabled={
+                isSpinning || selectedNumber !== null || timers[username] === 0
+              }
               className={`w-10 h-10 rounded-full ${
                 selectedNumber === number
                   ? "bg-teal-700 text-white"
                   : "bg-white text-teal-700"
               } font-bold text-lg focus:outline-none focus:ring-2 focus:ring-teal-500 ${
-                isSpinning || selectedNumber !== null
+                isSpinning || selectedNumber !== null || timers[username] === 0
                   ? "opacity-50 cursor-not-allowed"
                   : "hover:bg-teal-100"
               }`}
@@ -230,9 +291,17 @@ export default function Spinner({ username, roomId }: SpinnerProps) {
           </h2>
           <ul className="text-white">
             {users.map((user, index) => (
-              <li key={index}>
-                {user.username}{" "}
-                {user.number !== null ? "(Ready)" : "(Not Ready)"}
+              <li
+                key={index}
+                className="flex justify-between items-center mb-2"
+              >
+                <span>
+                  {user.username}{" "}
+                  {user.number !== null ? "(Ready)" : "(Not Ready)"}
+                </span>
+                <span className="ml-4 bg-teal-700 text-white px-2 py-1 rounded-full">
+                  {timers[user.username] ?? 0}s
+                </span>
               </li>
             ))}
           </ul>
