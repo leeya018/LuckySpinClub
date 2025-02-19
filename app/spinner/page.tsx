@@ -1,10 +1,11 @@
 "use client";
 
 import { useSearchParams, useRouter } from "next/navigation";
-import Spinner from "../../components/spinner";
+import Spinner from "@/components/spinner";
 import { useAuthState } from "react-firebase-hooks/auth";
 import { auth } from "@/firebase";
 import { useEffect } from "react";
+import UserInfo from "@/components/UserInfo";
 
 export default function SpinnerPage() {
   const searchParams = useSearchParams();
@@ -45,5 +46,10 @@ export default function SpinnerPage() {
     );
   }
 
-  return <Spinner username={user.displayName || "Anonymous"} roomId={roomId} />;
+  return (
+    <div className="relative">
+      <UserInfo />
+      <Spinner username={user.displayName || "Anonymous"} roomId={roomId} />
+    </div>
+  );
 }

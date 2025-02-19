@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { useAuthState } from "react-firebase-hooks/auth";
 import { auth } from "@/firebase";
 import { useEffect } from "react";
+import UserInfo from "@/components/UserInfo";
 
 const rooms = [
   { id: "room1", name: "Beginner's Luck" },
@@ -23,11 +24,7 @@ export default function RoomSelection() {
 
   const handleJoinRoom = (roomId: string) => {
     if (user) {
-      router.push(
-        `/spinner?username=${encodeURIComponent(
-          user.displayName || ""
-        )}&roomId=${roomId}`
-      );
+      router.push(`/spinner?roomId=${roomId}`);
     }
   };
 
@@ -53,6 +50,7 @@ export default function RoomSelection() {
 
   return (
     <div className="flex flex-col items-center justify-center min-h-screen bg-teal-500 py-8">
+      <UserInfo />
       <div className="bg-white p-8 rounded-lg shadow-md w-96">
         <h1 className="text-2xl font-bold mb-4 text-teal-700">Select a Room</h1>
         <div className="space-y-4">

@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { auth } from "@/firebase";
 import { signInWithPopup, GoogleAuthProvider } from "firebase/auth";
 import { useAuthState } from "react-firebase-hooks/auth";
+import { createOrUpdateUser } from "@/utils/user";
 
 export default function Login() {
   const [user, loading, error] = useAuthState(auth);
@@ -12,9 +13,9 @@ export default function Login() {
 
   useEffect(() => {
     if (user) {
-      router.push(
-        `/rooms?username=${encodeURIComponent(user.displayName || "")}`
-      );
+      createOrUpdateUser(user.uid, user.displayName || "Anonymous")
+        .then(() => router.push(`/rooms`))
+        .catch((error) => console.error("Error creating/updating user", error));
     }
   }, [user, router]);
 
