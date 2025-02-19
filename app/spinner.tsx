@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { motion, useAnimationControls } from "framer-motion";
 import io, { type Socket } from "socket.io-client";
 
@@ -22,13 +22,15 @@ interface SpinnerProps {
 }
 
 export default function Spinner({ username, roomId }: SpinnerProps) {
-  const [socket, setSocket] = useState<Socket | null>(null);
+  const socket = useRef<Socket | null>(null);
   const [users, setUsers] = useState<User[]>([]);
   const [isSpinning, setIsSpinning] = useState(false);
   const [result, setResult] = useState<number | null>(null);
   const [selectedNumber, setSelectedNumber] = useState<number | null>(null);
   const [timers, setTimers] = useState<{ [key: string]: number }>({});
+  const [countdown, setCountdown] = useState<number | null>(null);
   const controls = useAnimationControls();
+  const multRef = useRef<any>(1);
 
   const segments = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
   const colors = [
@@ -45,46 +47,46 @@ export default function Spinner({ username, roomId }: SpinnerProps) {
   ];
 
   useEffect(() => {
-    const newSocket = io(
+    socket.current = io(
       process.env.NODE_ENV === "production"
         ? "https://your-vercel-app-url.vercel.app"
         : "http://localhost:3001"
     );
-    setSocket(newSocket);
 
-    newSocket.emit("joinRoom", roomId, username);
+    socket.current.emit("joinRoom", roomId, username);
 
-    newSocket.on("userJoined", (updatedUsers: User[]) => {
+    socket.current.on("userJoined", (updatedUsers: User[]) => {
       setUsers(updatedUsers);
       initializeTimers(updatedUsers);
     });
 
-    newSocket.on("userLeft", (updatedUsers: User[]) => {
+    socket.current.on("userLeft", (updatedUsers: User[]) => {
       setUsers(updatedUsers);
       initializeTimers(updatedUsers);
     });
 
-    newSocket.on("userChoseNumber", (updatedUsers: User[]) => {
+    socket.current.on("userChoseNumber", (updatedUsers: User[]) => {
       setUsers(updatedUsers);
     });
 
-    newSocket.on("allUsersChosen", (spinResult: number) => {
+    socket.current.on("allUsersChosen", (spinResult: number) => {
       handleSpin(spinResult);
     });
 
-    newSocket.on("startNewRound", (updatedUsers: User[]) => {
+    socket.current.on("countdown", (count: number) => {
+      setCountdown(count);
+    });
+
+    socket.current.on("startNewRound", (updatedUsers: User[]) => {
       setUsers(updatedUsers);
       setSelectedNumber(null);
       setResult(null);
+      setCountdown(null);
       initializeTimers(updatedUsers);
     });
 
-    newSocket.on("autoSelectedNumber", (number: number) => {
-      setSelectedNumber(number);
-    });
-
     return () => {
-      newSocket.disconnect();
+      socket.current?.disconnect();
     };
   }, [roomId, username]);
 
@@ -97,67 +99,75 @@ export default function Spinner({ username, roomId }: SpinnerProps) {
   };
 
   useEffect(() => {
-    const interval = setInterval(() => {
-      setTimers((prevTimers) => {
-        const newTimers: { [key: string]: number } = {};
-        let allTimersExpired = true;
+    if (countdown === null) {
+      const interval = setInterval(() => {
+        setTimers((prevTimers) => {
+          const newTimers: { [key: string]: number } = {};
+          let allTimersExpired = true;
 
-        users.forEach((user) => {
-          if (user.number === null) {
-            const timeLeft = Math.max(
-              0,
-              10 - Math.floor((Date.now() - user.joinTime) / 1000)
-            );
-            newTimers[user.username] = timeLeft;
-            if (timeLeft > 0) allTimersExpired = false;
-          } else {
-            newTimers[user.username] = 0;
+          users.forEach((user) => {
+            if (user.number === null) {
+              const timeLeft = Math.max(
+                0,
+                10 - Math.floor((Date.now() - user.joinTime) / 1000)
+              );
+              newTimers[user.username] = timeLeft;
+              if (timeLeft > 0) allTimersExpired = false;
+            } else {
+              newTimers[user.username] = 0;
+            }
+          });
+
+          if (allTimersExpired) {
+            clearInterval(interval);
           }
+
+          return newTimers;
         });
+      }, 1000);
 
-        if (allTimersExpired) {
-          clearInterval(interval);
-        }
-
-        return newTimers;
-      });
-    }, 1000);
-
-    return () => clearInterval(interval);
-  }, [users]);
+      return () => clearInterval(interval);
+    }
+  }, [users, countdown]);
 
   const handleNumberSelection = (number: number) => {
-    if (isSpinning || selectedNumber !== null) return;
+    if (isSpinning || selectedNumber !== null || countdown !== null) return;
     setSelectedNumber(number);
-    socket?.emit("chooseNumber", roomId, number);
+    socket.current?.emit("chooseNumber", roomId, number);
   };
 
-  const handleSpin = useCallback(
-    (spinResult: number) => {
-      setIsSpinning(true);
-      setResult(null);
+  const handleSpin = (spinResult: number) => {
+    setIsSpinning(true);
+    setResult(null);
 
-      const spinRotations = 5;
-      const segmentRotation = (spinResult - 1) * 36;
-      const newRotation = spinRotations * 360 + segmentRotation + 18; // +18 to point to the center
+    const spinRotations = 5;
+    const segmentRotation = (spinResult - 1) * 36;
+    const newRotation = spinRotations * 360 + segmentRotation + 18; // +18 to point to the center
+    // const spinRotations = 5;
+    // const initialPosition = 4; // Initial number at the bottom
+    // const segmentRotation = (spinResult - initialPosition) * 36;
+    // const newRotation =
+    //   (spinRotations * 360 - segmentRotation) * multRef.current;
+    // multRef.current += 1 + Math.random();
 
-      controls
-        .start({
-          rotate: newRotation,
-          transition: {
-            duration: 5,
-            ease: spinEasing,
-          },
-        })
-        .then(() => {
-          setIsSpinning(false);
-          setResult(spinResult);
-          setSelectedNumber(null);
-          socket?.emit("roundComplete", roomId);
-        });
-    },
-    [controls, socket, roomId]
-  );
+    controls
+      .start({
+        rotate: newRotation,
+        transition: {
+          duration: 5,
+          ease: [0.1, 0.25, 0.5, 1], // Custom cubic bezier curve for smooth acceleration/deceleration
+        },
+      })
+      .then(() => {
+        setIsSpinning(false);
+        setResult(spinResult);
+        socket.current?.emit("spinComplete", roomId);
+      })
+      .catch((err) => {
+        console.log(err);
+        console.log(err.message);
+      });
+  };
 
   return (
     <div className="flex flex-col items-center min-h-screen bg-teal-500 py-8 gap-4">
@@ -170,6 +180,12 @@ export default function Spinner({ username, roomId }: SpinnerProps) {
         </div>
       </div>
       <div className="text-white text-xl">Spinner Game</div>
+
+      {countdown !== null && (
+        <div className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-50 z-50">
+          <div className="text-white text-9xl font-bold">{countdown}</div>
+        </div>
+      )}
 
       <div className="relative w-64 h-64">
         {/* Spinner Wheel */}
@@ -251,14 +267,20 @@ export default function Spinner({ username, roomId }: SpinnerProps) {
               key={number}
               onClick={() => handleNumberSelection(number)}
               disabled={
-                isSpinning || selectedNumber !== null || timers[username] === 0
+                isSpinning ||
+                selectedNumber !== null ||
+                countdown !== null ||
+                timers[username] === 0
               }
               className={`w-10 h-10 rounded-full ${
                 selectedNumber === number
                   ? "bg-teal-700 text-white"
                   : "bg-white text-teal-700"
               } font-bold text-lg focus:outline-none focus:ring-2 focus:ring-teal-500 ${
-                isSpinning || selectedNumber !== null || timers[username] === 0
+                isSpinning ||
+                selectedNumber !== null ||
+                countdown !== null ||
+                timers[username] === 0
                   ? "opacity-50 cursor-not-allowed"
                   : "hover:bg-teal-100"
               }`}
@@ -274,7 +296,7 @@ export default function Spinner({ username, roomId }: SpinnerProps) {
           </div>
         )}
 
-        {result !== null && !isSpinning && (
+        {result !== null && !isSpinning && countdown === null && (
           <div className="mt-4 text-white text-xl font-bold">
             {selectedNumber !== null
               ? result === selectedNumber

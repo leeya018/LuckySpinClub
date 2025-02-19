@@ -22,7 +22,11 @@ io.on("connection", (socket) => {
   socket.on("joinRoom", (roomId, username) => {
     socket.join(roomId);
     if (!rooms.has(roomId)) {
-      rooms.set(roomId, { users: new Map(), roundInProgress: false });
+      rooms.set(roomId, {
+        users: new Map(),
+        roundInProgress: false,
+        countdownInProgress: false,
+      });
     }
     const joinTime = Date.now();
     rooms
@@ -32,38 +36,28 @@ io.on("connection", (socket) => {
       "userJoined",
       Array.from(rooms.get(roomId).users.values())
     );
-
-    // Start the timer for the user who just joined
-    setTimeout(() => {
-      const room = rooms.get(roomId);
-      if (
-        room &&
-        room.users.has(socket.id) &&
-        room.users.get(socket.id).number === null
-      ) {
-        const randomNumber = Math.floor(Math.random() * 6) + 1;
-        room.users.get(socket.id).number = randomNumber;
-        socket.emit("autoSelectedNumber", randomNumber);
-        io.to(roomId).emit("userChoseNumber", Array.from(room.users.values()));
-        checkAllUsersChosen(roomId);
-      }
-    }, 10000);
   });
 
   socket.on("chooseNumber", (roomId, number) => {
     const room = rooms.get(roomId);
-    if (room && room.users.has(socket.id)) {
+    if (
+      room &&
+      room.users.has(socket.id) &&
+      !room.roundInProgress &&
+      !room.countdownInProgress
+    ) {
       room.users.get(socket.id).number = number;
       io.to(roomId).emit("userChoseNumber", Array.from(room.users.values()));
       checkAllUsersChosen(roomId);
     }
   });
 
-  socket.on("roundComplete", (roomId) => {
+  socket.on("spinComplete", (roomId) => {
+    console.log("spinComplete");
     const room = rooms.get(roomId);
     if (room) {
       room.roundInProgress = false;
-      startNewRound(roomId);
+      startCountdown(roomId);
     }
   });
 
@@ -85,10 +79,27 @@ function spinWheel() {
   return Math.floor(Math.random() * 10) + 1;
 }
 
+function startCountdown(roomId) {
+  const room = rooms.get(roomId);
+  if (room) {
+    room.countdownInProgress = true;
+    let countdown = 3;
+    const countdownInterval = setInterval(() => {
+      io.to(roomId).emit("countdown", countdown);
+      countdown--;
+      if (countdown < 0) {
+        clearInterval(countdownInterval);
+        startNewRound(roomId);
+      }
+    }, 1000);
+  }
+}
+
 function startNewRound(roomId) {
   const room = rooms.get(roomId);
   if (room) {
-    room.roundInProgress = true;
+    room.roundInProgress = false;
+    room.countdownInProgress = false;
     room.users.forEach((user) => {
       user.number = null;
       user.joinTime = Date.now();
@@ -104,11 +115,13 @@ function checkAllUsersChosen(roomId) {
       (user) => user.number !== null
     );
     if (allChosen) {
+      room.roundInProgress = true;
       const result = spinWheel();
       io.to(roomId).emit("allUsersChosen", result);
     }
   }
 }
+
 const PORT = 3001;
 server.listen(PORT, () => {
   console.log(`Server is running on port ${PORT}`);
