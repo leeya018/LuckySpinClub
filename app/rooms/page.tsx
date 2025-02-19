@@ -1,6 +1,9 @@
 "use client";
 
-import { useRouter, useSearchParams } from "next/navigation";
+import { useRouter } from "next/navigation";
+import { useAuthState } from "react-firebase-hooks/auth";
+import { auth } from "@/firebase";
+import { useEffect } from "react";
 
 const rooms = [
   { id: "room1", name: "Beginner's Luck" },
@@ -10,14 +13,43 @@ const rooms = [
 
 export default function RoomSelection() {
   const router = useRouter();
-  const searchParams = useSearchParams();
-  const username = searchParams.get("username");
+  const [user, loading, error] = useAuthState(auth);
+
+  useEffect(() => {
+    if (!loading && !user) {
+      router.push("/login");
+    }
+  }, [user, loading, router]);
 
   const handleJoinRoom = (roomId: string) => {
-    router.push(
-      `/spinner?username=${encodeURIComponent(username || "")}&roomId=${roomId}`
-    );
+    if (user) {
+      router.push(
+        `/spinner?username=${encodeURIComponent(
+          user.displayName || ""
+        )}&roomId=${roomId}`
+      );
+    }
   };
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center min-h-screen bg-teal-500">
+        <div className="text-white text-2xl">Loading...</div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="flex items-center justify-center min-h-screen bg-teal-500">
+        <div className="text-white text-2xl">Error: {error.message}</div>
+      </div>
+    );
+  }
+
+  if (!user) {
+    return null; // This will be handled by the useEffect hook
+  }
 
   return (
     <div className="flex flex-col items-center justify-center min-h-screen bg-teal-500 py-8">
