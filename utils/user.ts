@@ -1,5 +1,5 @@
 import { db } from "../firebase";
-import { doc, setDoc, getDoc } from "firebase/firestore";
+import { doc, setDoc, getDoc, updateDoc, increment } from "firebase/firestore";
 
 export async function createOrUpdateUser(userId: string, displayName: string) {
   const userRef = doc(db, "users", userId);
@@ -24,4 +24,14 @@ export async function getUserPoints(userId: string): Promise<number> {
   }
 
   return 0;
+}
+
+export async function updateUserPoints(
+  userId: string,
+  pointChange: number
+): Promise<void> {
+  const userRef = doc(db, "users", userId);
+  await updateDoc(userRef, {
+    points: increment(pointChange),
+  });
 }

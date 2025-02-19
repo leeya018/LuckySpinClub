@@ -7,9 +7,9 @@ import { useEffect } from "react";
 import UserInfo from "@/components/UserInfo";
 
 const rooms = [
-  { id: "room1", name: "Beginner's Luck" },
-  { id: "room2", name: "High Rollers" },
-  { id: "room3", name: "Fortune's Wheel" },
+  { id: "room1", name: "Beginner's Luck", bet: 1 },
+  { id: "room2", name: "High Rollers", bet: 2 },
+  { id: "room3", name: "Fortune's Wheel", bet: 3 },
 ];
 
 export default function RoomSelection() {
@@ -22,9 +22,9 @@ export default function RoomSelection() {
     }
   }, [user, loading, router]);
 
-  const handleJoinRoom = (roomId: string) => {
+  const handleJoinRoom = (roomId: string, bet: number) => {
     if (user) {
-      router.push(`/spinner?roomId=${roomId}`);
+      router.push(`/spinner?roomId=${roomId}&bet=${bet}`);
     }
   };
 
@@ -57,10 +57,10 @@ export default function RoomSelection() {
           {rooms.map((room) => (
             <button
               key={room.id}
-              onClick={() => handleJoinRoom(room.id)}
+              onClick={() => handleJoinRoom(room.id, room.bet)}
               className="w-full py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-teal-600 hover:bg-teal-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-teal-500"
             >
-              Join {room.name}
+              Join {room.name} (Bet: {room.bet} point{room.bet > 1 ? "s" : ""})
             </button>
           ))}
         </div>

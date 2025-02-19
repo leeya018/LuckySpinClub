@@ -3,25 +3,25 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { motion, useAnimationControls } from "framer-motion";
 import io, { type Socket } from "socket.io-client";
-
-// Custom easing function for realistic spin
-const spinEasing = (t: number) => {
-  // Start fast, then gradually slow down
-  return 1 - Math.pow(1 - t, 4);
-};
+import { useAuthState } from "react-firebase-hooks/auth";
+import { auth } from "@/firebase";
+import { updateUserPoints, getUserPoints } from "@/utils/user";
 
 interface User {
   username: string;
   number: number | null;
   joinTime: number;
+  userId: string;
 }
 
 interface SpinnerProps {
   username: string;
   roomId: string;
+  bet: number;
 }
 
-export default function Spinner({ username, roomId }: SpinnerProps) {
+export default function Spinner({ username, roomId, bet }: SpinnerProps) {
+  const [user] = useAuthState(auth);
   const socket = useRef<Socket | null>(null);
   const [users, setUsers] = useState<User[]>([]);
   const [isSpinning, setIsSpinning] = useState(false);
@@ -29,8 +29,9 @@ export default function Spinner({ username, roomId }: SpinnerProps) {
   const [selectedNumber, setSelectedNumber] = useState<number | null>(null);
   const [timers, setTimers] = useState<{ [key: string]: number }>({});
   const [countdown, setCountdown] = useState<number | null>(null);
+  const [totalBet, setTotalBet] = useState(0);
+  const [userPoints, setUserPoints] = useState(0);
   const controls = useAnimationControls();
-  const multRef = useRef<any>(1);
 
   const segments = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
   const colors = [
@@ -47,26 +48,35 @@ export default function Spinner({ username, roomId }: SpinnerProps) {
   ];
 
   useEffect(() => {
+    if (user) {
+      getUserPoints(user.uid).then(setUserPoints);
+    }
+  }, [user]);
+
+  useEffect(() => {
     socket.current = io(
       process.env.NODE_ENV === "production"
         ? "https://your-vercel-app-url.vercel.app"
         : "http://localhost:3001"
     );
 
-    socket.current.emit("joinRoom", roomId, username);
+    socket.current.emit("joinRoom", roomId, username, user?.uid);
 
     socket.current.on("userJoined", (updatedUsers: User[]) => {
       setUsers(updatedUsers);
       initializeTimers(updatedUsers);
+      updateTotalBet(updatedUsers);
     });
 
     socket.current.on("userLeft", (updatedUsers: User[]) => {
       setUsers(updatedUsers);
       initializeTimers(updatedUsers);
+      updateTotalBet(updatedUsers);
     });
 
     socket.current.on("userChoseNumber", (updatedUsers: User[]) => {
       setUsers(updatedUsers);
+      updateTotalBet(updatedUsers);
     });
 
     socket.current.on("allUsersChosen", (spinResult: number) => {
@@ -83,12 +93,13 @@ export default function Spinner({ username, roomId }: SpinnerProps) {
       setResult(null);
       setCountdown(null);
       initializeTimers(updatedUsers);
+      updateTotalBet(updatedUsers);
     });
 
     return () => {
       socket.current?.disconnect();
     };
-  }, [roomId, username]);
+  }, [roomId, username, user]);
 
   const initializeTimers = (updatedUsers: User[]) => {
     const newTimers: { [key: string]: number } = {};
@@ -96,6 +107,12 @@ export default function Spinner({ username, roomId }: SpinnerProps) {
       newTimers[user.username] = 10;
     });
     setTimers(newTimers);
+  };
+
+  const updateTotalBet = (updatedUsers: User[]) => {
+    const total =
+      updatedUsers.filter((user) => user.number !== null).length * bet;
+    setTotalBet(total);
   };
 
   useEffect(() => {
@@ -130,43 +147,62 @@ export default function Spinner({ username, roomId }: SpinnerProps) {
     }
   }, [users, countdown]);
 
-  const handleNumberSelection = (number: number) => {
-    if (isSpinning || selectedNumber !== null || countdown !== null) return;
+  const handleNumberSelection = async (number: number) => {
+    if (isSpinning || selectedNumber !== null || countdown !== null || !user)
+      return;
+    if (userPoints < bet) {
+      alert("Not enough points to place a bet!");
+      return;
+    }
     setSelectedNumber(number);
-    socket.current?.emit("chooseNumber", roomId, number);
+    await updateUserPoints(user.uid, -bet);
+    setUserPoints((prevPoints) => prevPoints - bet);
+    socket.current?.emit("chooseNumber", roomId, number, user.uid);
   };
 
-  const handleSpin = (spinResult: number) => {
-    setIsSpinning(true);
-    setResult(null);
+  const handleSpin = useCallback(
+    (spinResult: number) => {
+      setIsSpinning(true);
+      setResult(null);
 
-    const spinRotations = 5;
-    const segmentRotation = (spinResult - 1) * 36;
-    const newRotation = spinRotations * 360 + segmentRotation + 18; // +18 to point to the center
-    // const spinRotations = 5;
-    // const initialPosition = 4; // Initial number at the bottom
-    // const segmentRotation = (spinResult - initialPosition) * 36;
-    // const newRotation =
-    //   (spinRotations * 360 - segmentRotation) * multRef.current;
-    // multRef.current += 1 + Math.random();
+      const spinRotations = 5;
+      const segmentRotation = (spinResult - 1) * 36;
+      const newRotation = spinRotations * 360 + segmentRotation + 18; // +18 to point to the center
 
-    controls
-      .start({
-        rotate: newRotation,
-        transition: {
-          duration: 5,
-          ease: [0.1, 0.25, 0.5, 1], // Custom cubic bezier curve for smooth acceleration/deceleration
-        },
-      })
-      .then(() => {
-        setIsSpinning(false);
-        setResult(spinResult);
-        socket.current?.emit("spinComplete", roomId);
-      })
-      .catch((err) => {
-        console.log(err);
-        console.log(err.message);
-      });
+      controls
+        .start({
+          rotate: newRotation,
+          transition: {
+            duration: 5,
+            ease: [0.1, 0.25, 0.5, 1], // Custom cubic bezier curve for smooth acceleration/deceleration
+          },
+        })
+        .then(() => {
+          setIsSpinning(false);
+          setResult(spinResult);
+          distributeWinnings(spinResult);
+          socket.current?.emit("spinComplete", roomId);
+        })
+        .catch((err) => {
+          console.log(err);
+          console.log(err.message);
+        });
+    },
+    [controls, roomId]
+  );
+
+  const distributeWinnings = async (spinResult: number) => {
+    if (!user) return;
+
+    const winners = users.filter((u) => u.number === spinResult);
+    if (winners.length > 0) {
+      const winningsPerUser = Math.floor(totalBet / winners.length);
+      if (winners.some((w) => w.userId === user.uid)) {
+        await updateUserPoints(user.uid, winningsPerUser);
+        setUserPoints((prevPoints) => prevPoints + winningsPerUser);
+        alert(`Congratulations! You won ${winningsPerUser} points!`);
+      }
+    }
   };
 
   return (
@@ -177,6 +213,8 @@ export default function Spinner({ username, roomId }: SpinnerProps) {
             Welcome, {username}!
           </div>
           <div className="text-white text-xl">Room: {roomId}</div>
+          <div className="text-white text-xl">Your Points: {userPoints}</div>
+          <div className="text-white text-xl">Total Bet: {totalBet}</div>
         </div>
       </div>
       <div className="text-white text-xl">Spinner Game</div>
@@ -270,7 +308,8 @@ export default function Spinner({ username, roomId }: SpinnerProps) {
                 isSpinning ||
                 selectedNumber !== null ||
                 countdown !== null ||
-                timers[username] === 0
+                timers[username] === 0 ||
+                userPoints < bet
               }
               className={`w-10 h-10 rounded-full ${
                 selectedNumber === number
@@ -280,7 +319,8 @@ export default function Spinner({ username, roomId }: SpinnerProps) {
                 isSpinning ||
                 selectedNumber !== null ||
                 countdown !== null ||
-                timers[username] === 0
+                timers[username] === 0 ||
+                userPoints < bet
                   ? "opacity-50 cursor-not-allowed"
                   : "hover:bg-teal-100"
               }`}

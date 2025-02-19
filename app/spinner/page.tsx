@@ -13,6 +13,7 @@ export default function SpinnerPage() {
   const [user, loading, error] = useAuthState(auth);
 
   const roomId = searchParams.get("roomId") || "";
+  const bet = Number.parseInt(searchParams.get("bet") || "1", 10);
 
   useEffect(() => {
     if (!loading && !user) {
@@ -49,7 +50,11 @@ export default function SpinnerPage() {
   return (
     <div className="relative">
       <UserInfo />
-      <Spinner username={user.displayName || "Anonymous"} roomId={roomId} />
+      <Spinner
+        username={user.displayName || "Anonymous"}
+        roomId={roomId}
+        bet={bet}
+      />
     </div>
   );
 }
