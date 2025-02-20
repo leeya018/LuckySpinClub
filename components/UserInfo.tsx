@@ -2,10 +2,10 @@
 
 import { useEffect, useState } from "react";
 import { useAuthState } from "react-firebase-hooks/auth";
-import { auth } from "../firebase";
-import { getUserPoints } from "../utils/user";
+import { auth, db } from "../firebase";
 import { signOut } from "firebase/auth";
 import { useRouter } from "next/navigation";
+import { doc, onSnapshot } from "firebase/firestore";
 
 export default function UserInfo() {
   const [user] = useAuthState(auth);
@@ -14,7 +14,14 @@ export default function UserInfo() {
 
   useEffect(() => {
     if (user) {
-      getUserPoints(user.uid).then(setPoints);
+      const userRef = doc(db, "users", user.uid);
+      const unsubscribe = onSnapshot(userRef, (doc) => {
+        if (doc.exists()) {
+          setPoints(doc.data().points);
+        }
+      });
+
+      return () => unsubscribe();
     }
   }, [user]);
 
