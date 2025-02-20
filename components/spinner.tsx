@@ -168,10 +168,13 @@ export default function Spinner({ username, roomId, bet }: SpinnerProps) {
       setResult(null);
 
       const spinRotations = 5;
-      const segmentRotation = (spinResult - 1) * 36;
-      const newRotation =
-        accumulateRotation.current + spinRotations * 360 + segmentRotation;
-      accumulateRotation.current = newRotation;
+      const segmentRotation = 3 * 36;
+      const newRotation = 1230;
+      // const newRotation =
+      //   accumulateRotation.current + spinRotations * 360 + segmentRotation;
+      // accumulateRotation.current = newRotation;
+
+      const lastRes = 3;
       controls
         .start({
           rotate: newRotation,
@@ -181,6 +184,8 @@ export default function Spinner({ username, roomId, bet }: SpinnerProps) {
           },
         })
         .then(() => {
+          const res = (newRotation % 360) / 36 + lastRes;
+          console.log(res);
           setIsSpinning(false);
           setResult(spinResult);
           distributeWinnings(spinResult);
