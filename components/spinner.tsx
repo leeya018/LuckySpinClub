@@ -31,6 +31,7 @@ export default function Spinner({ username, roomId, bet }: SpinnerProps) {
   const [countdown, setCountdown] = useState<number | null>(null);
   const [totalBet, setTotalBet] = useState(0);
   const [userPoints, setUserPoints] = useState(0);
+  const accumulateRotation = useRef(0);
   const controls = useAnimationControls();
 
   const segments = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
@@ -155,6 +156,7 @@ export default function Spinner({ username, roomId, bet }: SpinnerProps) {
       return;
     }
     setSelectedNumber(number);
+
     await updateUserPoints(user.uid, -bet);
     setUserPoints((prevPoints) => prevPoints - bet);
     socket.current?.emit("chooseNumber", roomId, number, user.uid);
@@ -167,8 +169,9 @@ export default function Spinner({ username, roomId, bet }: SpinnerProps) {
 
       const spinRotations = 5;
       const segmentRotation = (spinResult - 1) * 36;
-      const newRotation = spinRotations * 360 + segmentRotation + 18; // +18 to point to the center
-
+      const newRotation =
+        accumulateRotation.current + spinRotations * 360 + segmentRotation;
+      accumulateRotation.current = newRotation;
       controls
         .start({
           rotate: newRotation,
