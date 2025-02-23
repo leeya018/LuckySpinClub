@@ -3,13 +3,13 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
+    "dev-all": "concurrently \"npm run server\" \"npm run client\"",
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
     "client": "next dev",
-    "server": "node ./server/index.js",
-    "dev-all": "concurrently \"npm run server\" \"npm run client\""
+    "server": "node ./server/index.js"
   },
   "dependencies": {
     "@emotion/is-prop-valid": "latest",
